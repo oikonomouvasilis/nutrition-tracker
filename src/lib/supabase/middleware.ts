@@ -10,14 +10,14 @@ export async function updateSession(request: NextRequest) {
   const supabaseResponse = NextResponse.next({ request });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
+  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !publishableKey) {
     return supabaseResponse; // Supabase δεν έχει ρυθμιστεί ακόμα.
   }
 
   let response = supabaseResponse;
 
-  const supabase = createServerClient(url, anonKey, {
+  const supabase = createServerClient(url, publishableKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -35,9 +35,19 @@ export async function updateSession(request: NextRequest) {
   });
 
   // ΣΗΜΑΝΤΙΚΟ: μην βάζεις κώδικα ανάμεσα στο createServerClient και το getUser().
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Σημείωση: route protection (redirect σε /login) θα προστεθεί όταν χτιστεί
-  // το auth UI. Προς το παρόν απλώς ανανεώνουμε το session.
+  // Route protection: μη συνδεδεμένοι χρήστες -> /login (εκτός public paths).
+  const path = request.nextUrl.pathname;
+  const isPublic = path.startsWith("/login") || path.startsWith("/auth");
+
+  if (!user && !isPublic) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
   return response;
 }
