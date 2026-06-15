@@ -99,3 +99,32 @@ export function sumMacros(parts: MacroTotals[]): MacroTotals {
     { calories: 0, protein: 0, carbs: 0, fats: 0 },
   );
 }
+
+export const MEAL_SLOTS: MealSlot[] = [
+  "breakfast",
+  "lunch",
+  "afternoon",
+  "evening",
+  "other",
+];
+
+export const MEAL_SLOT_LABELS: Record<MealSlot, string> = {
+  breakfast: "Πρωινό",
+  lunch: "Μεσημεριανό",
+  afternoon: "Απογευματινό",
+  evening: "Βραδινό",
+  other: "Άλλο",
+};
+
+// Input για δημιουργία/ενημέρωση γεύματος (από τον meal builder).
+export interface MealItemInput {
+  food_id: string;
+  quantity: number;
+}
+
+export interface MealInput {
+  name: string;
+  meal_type: MealSlot | null;
+  description: string | null;
+  items: MealItemInput[];
+}
