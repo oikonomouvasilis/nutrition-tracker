@@ -25,7 +25,7 @@ export default async function Home() {
         Συνδεδεμένος ως {user?.email}
       </p>
 
-      <nav className="mt-8 grid gap-4 sm:grid-cols-3">
+      <nav className="mt-8 grid gap-4 sm:grid-cols-2">
         <Link
           href="/foods"
           className="rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-zinc-400 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
@@ -59,6 +59,18 @@ export default async function Home() {
           </h2>
           <p className="mt-1 text-sm text-zinc-500">
             Καταγραφή & ιστορικό ανά ημέρα.
+          </p>
+        </Link>
+
+        <Link
+          href="/stats"
+          className="rounded-2xl border border-zinc-200 bg-white p-6 transition hover:border-zinc-400 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <h2 className="font-medium text-zinc-900 dark:text-zinc-50">
+            📊 Στατιστικά
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Γραφήματα & μέσοι όροι πρόσληψης.
           </p>
         </Link>
       </nav>

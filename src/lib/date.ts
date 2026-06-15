@@ -26,3 +26,25 @@ export function formatDateGreek(iso: string): string {
     year: "numeric",
   });
 }
+
+/** Σύντομη μορφή «ΗΗ/ΜΜ». */
+export function formatShortGreek(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
+/** Λίστα όλων των ημερών (YYYY-MM-DD) από from έως to (μέγιστο 400). */
+export function eachDay(from: string, to: string): string[] {
+  if (from > to) return [from];
+  const days: string[] = [];
+  let cur = from;
+  let guard = 0;
+  while (cur <= to && guard < 400) {
+    days.push(cur);
+    cur = addDays(cur, 1);
+    guard++;
+  }
+  return days;
+}
