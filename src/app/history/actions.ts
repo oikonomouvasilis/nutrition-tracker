@@ -17,11 +17,15 @@ type Per100 = {
   fats_per_100: number;
 };
 
-/** Καταγραφή ενός αποθηκευμένου γεύματος. Τα μακρο υπολογίζονται server-side (snapshot). */
+/**
+ * Καταγραφή μιας συνταγής με ρυθμιζόμενες ποσότητες ανά υλικό.
+ * Τα μακρο υπολογίζονται server-side από τις τιμές ανά 100 (snapshot, authoritative).
+ */
 export async function logMeal(input: {
   date: string;
   slot: MealSlot;
   meal_id: string;
+  items: { food_id: string; quantity: number }[];
 }): Promise<LogResult> {
   const supabase = await createClient();
   const {
@@ -31,24 +35,28 @@ export async function logMeal(input: {
 
   const { data: meal } = await supabase
     .from("meals")
-    .select(
-      "name, meal_items(quantity, foods(calories_per_100, protein_per_100, carbs_per_100, fats_per_100))",
-    )
+    .select("name")
     .eq("id", input.meal_id)
     .single();
+  if (!meal) return { error: "Η συνταγή δεν βρέθηκε." };
 
-  if (!meal) return { error: "Το γεύμα δεν βρέθηκε." };
+  // Φέρνουμε τις τιμές ανά 100 για τα food_ids της συνταγής (RLS: μόνο δικά του).
+  const foodIds = [...new Set(input.items.map((it) => it.food_id))];
+  const { data: foods } = await supabase
+    .from("foods")
+    .select("id, calories_per_100, protein_per_100, carbs_per_100, fats_per_100")
+    .in("id", foodIds);
 
-  const items = (meal.meal_items ?? []) as unknown as {
-    quantity: number;
-    foods: Per100 | null;
-  }[];
+  const per100 = new Map(
+    ((foods ?? []) as (Per100 & { id: string })[]).map((f) => [f.id, f]),
+  );
+
   const totals = sumMacros(
-    items.map((it) =>
-      it.foods
-        ? macrosForQuantity(it.foods, it.quantity)
-        : { calories: 0, protein: 0, carbs: 0, fats: 0 },
-    ),
+    input.items.map((it) => {
+      const f = per100.get(it.food_id);
+      const q = Number(it.quantity) || 0;
+      return f ? macrosForQuantity(f, q) : { calories: 0, protein: 0, carbs: 0, fats: 0 };
+    }),
   );
 
   const { error } = await supabase.from("log_entries").insert({

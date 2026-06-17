@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { sumMacros } from "@/types/nutrition";
+import {
+  type MealSlot,
+  MEAL_SLOTS,
+  MEAL_SLOT_LABELS,
+  sumMacros,
+} from "@/types/nutrition";
 import {
   addDays,
   eachDay,
@@ -8,17 +13,31 @@ import {
   isValidISODate,
   todayISO,
 } from "@/lib/date";
-import StatsCharts from "./stats-charts";
+import { getUserGoals } from "@/lib/goals-data";
+import {
+  DailyMetricChart,
+  MacroDonut,
+  MacroTrend,
+  SlotBars,
+} from "./stats-charts";
+import { MACRO_NEON } from "../_components/dashboard-charts";
 
 const r = (n: number) => Math.round(n);
 
 type Entry = {
   entry_date: string;
+  slot: MealSlot;
   calories: number;
   protein: number;
   carbs: number;
   fats: number;
 };
+
+const PRESETS = [
+  { days: 7, label: "7 ημέρες" },
+  { days: 30, label: "30 ημέρες" },
+  { days: 90, label: "90 ημέρες" },
+];
 
 export default async function StatsPage({
   searchParams,
@@ -26,23 +45,28 @@ export default async function StatsPage({
   searchParams: Promise<{ from?: string; to?: string }>;
 }) {
   const sp = await searchParams;
-  const to = isValidISODate(sp.to) ? sp.to : todayISO();
+  const today = todayISO();
+  const to = isValidISODate(sp.to) ? sp.to : today;
   const from = isValidISODate(sp.from) ? sp.from : addDays(to, -6);
 
   const supabase = await createClient();
+  const goals = await getUserGoals();
   const { data } = await supabase
     .from("log_entries")
-    .select("entry_date, calories, protein, carbs, fats")
+    .select("entry_date, slot, calories, protein, carbs, fats")
     .gte("entry_date", from)
     .lte("entry_date", to);
 
   const entries = (data ?? []) as Entry[];
 
-  // Aggregation ανά ημέρα (συμπεριλαμβάνει κενές ημέρες).
+  // ── Aggregation ανά ημέρα ──────────────────────────────────────────────────
   const days = eachDay(from, to);
+  const spanDays = days.length;
   const byDay = new Map(
     days.map((d) => [d, { calories: 0, protein: 0, carbs: 0, fats: 0 }]),
   );
+  const bySlot = new Map<MealSlot, number>(MEAL_SLOTS.map((s) => [s, 0]));
+
   for (const e of entries) {
     const agg = byDay.get(e.entry_date);
     if (agg) {
@@ -51,16 +75,43 @@ export default async function StatsPage({
       agg.carbs += e.carbs;
       agg.fats += e.fats;
     }
+    bySlot.set(e.slot, (bySlot.get(e.slot) ?? 0) + e.calories);
   }
 
-  const daily = days.map((d) => ({
-    label: formatShortGreek(d),
-    calories: r(byDay.get(d)!.calories),
+  const daily = days.map((d) => {
+    const v = byDay.get(d)!;
+    return {
+      label: formatShortGreek(d),
+      calories: r(v.calories),
+      protein: r(v.protein),
+      carbs: r(v.carbs),
+      fats: r(v.fats),
+    };
+  });
+
+  const slotData = MEAL_SLOTS.map((s) => ({
+    label: MEAL_SLOT_LABELS[s],
+    calories: r(bySlot.get(s) ?? 0),
   }));
 
   const totals = sumMacros(days.map((d) => byDay.get(d)!));
   const loggedDays = new Set(entries.map((e) => e.entry_date)).size;
-  const avg = loggedDays > 0 ? totals.calories / loggedDays : 0;
+  const div = Math.max(loggedDays, 1);
+  const avg = {
+    calories: totals.calories / div,
+    protein: totals.protein / div,
+    carbs: totals.carbs / div,
+    fats: totals.fats / div,
+  };
+
+  // Ημέρες εντός στόχου: θερμίδες ±15% του στόχου, μόνο για ημέρες με καταγραφή.
+  const lo = goals.calories * 0.85;
+  const hi = goals.calories * 1.15;
+  let adherent = 0;
+  for (const d of days) {
+    const c = byDay.get(d)!.calories;
+    if (c > 0 && c >= lo && c <= hi) adherent++;
+  }
 
   const macroKcal = {
     protein: totals.protein * 4,
@@ -68,70 +119,162 @@ export default async function StatsPage({
     fats: totals.fats * 9,
   };
 
+  const kpis = [
+    { label: "Σύνολο θερμίδων", value: `${r(totals.calories)}`, suffix: "kcal" },
+    { label: "Μ.Ο. / ημέρα", value: `${r(avg.calories)}`, suffix: `kcal · ${loggedDays} ημέρες` },
+    { label: "Ημέρες καταγραφής", value: `${loggedDays}`, suffix: `από ${spanDays}` },
+    { label: "Εντός στόχου", value: `${adherent}`, suffix: `${loggedDays > 0 ? r((adherent / loggedDays) * 100) : 0}% των ημερών` },
+  ];
+
+  const avgProgress = [
+    { label: "Θερμίδες", value: avg.calories, goal: goals.calories, unit: "kcal", color: MACRO_NEON.calories },
+    { label: "Πρωτεΐνη", value: avg.protein, goal: goals.protein, unit: "g", color: MACRO_NEON.protein },
+    { label: "Υδατάνθρακες", value: avg.carbs, goal: goals.carbs, unit: "g", color: MACRO_NEON.carbs },
+    { label: "Λιπαρά", value: avg.fats, goal: goals.fats, unit: "g", color: MACRO_NEON.fats },
+  ];
+
+  const isPresetActive = (n: number) => to === today && spanDays === n;
+  const hasData = entries.length > 0;
+
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <Link href="/" className="text-sm text-zinc-500 hover:underline">
-        ← Αρχική
-      </Link>
-      <h1 className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-        📊 Στατιστικά
-      </h1>
+    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Στατιστικά</h1>
+          <p className="mt-1 text-sm text-muted">
+            Ανάλυση πρόσληψης θερμίδων & μακροθρεπτικών στον χρόνο.
+          </p>
+        </div>
 
-      {/* Date range */}
-      <form
-        action="/stats"
-        className="mt-4 flex flex-wrap items-end gap-3 text-sm"
-      >
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-zinc-500">Από</span>
-          <input
-            type="date"
-            name="from"
-            defaultValue={from}
-            className="rounded-lg border border-zinc-300 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs text-zinc-500">Έως</span>
-          <input
-            type="date"
-            name="to"
-            defaultValue={to}
-            className="rounded-lg border border-zinc-300 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-800"
-          />
-        </label>
-        <button className="rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200">
-          Εφαρμογή
-        </button>
-      </form>
+        {/* Φίλτρα: presets + προσαρμοσμένο εύρος */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex rounded-xl border border-edge bg-surface/60 p-1">
+            {PRESETS.map((p) => {
+              const active = isPresetActive(p.days);
+              return (
+                <Link
+                  key={p.days}
+                  href={`/stats?from=${addDays(today, -(p.days - 1))}&to=${today}`}
+                  className={[
+                    "rounded-lg px-3 py-1.5 text-sm font-medium transition",
+                    active ? "bg-surface-2 text-neon-green" : "text-muted hover:text-foreground",
+                  ].join(" ")}
+                >
+                  {p.label}
+                </Link>
+              );
+            })}
+          </div>
 
-      {/* Summary */}
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {(
-          [
-            ["Σύνολο θερμίδων", r(totals.calories), "kcal"],
-            ["Μ.Ο. / ημέρα", r(avg), `kcal · ${loggedDays} ημ.`],
-            ["Πρωτεΐνη (σύν.)", r(totals.protein), "g"],
-            ["Υδ/Λιπ (σύν.)", `${r(totals.carbs)}/${r(totals.fats)}`, "g"],
-          ] as const
-        ).map(([label, value, suffix]) => (
-          <div
-            key={label}
-            className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <div className="text-xs text-zinc-400">{label}</div>
-            <div className="text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-              {value}
-            </div>
-            <div className="text-xs text-zinc-400">{suffix}</div>
+          <form action="/stats" className="flex items-end gap-2 text-sm">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-muted">Από</span>
+              <input type="date" name="from" defaultValue={from} className="rounded-lg border border-edge bg-surface-2 px-2 py-1.5 text-foreground outline-none focus:border-neon-green/60" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-muted">Έως</span>
+              <input type="date" name="to" defaultValue={to} className="rounded-lg border border-edge bg-surface-2 px-2 py-1.5 text-foreground outline-none focus:border-neon-green/60" />
+            </label>
+            <button className="rounded-lg bg-neon-green px-3 py-2 text-sm font-semibold text-[#06281a] transition hover:brightness-110">
+              Εφαρμογή
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* KPIs */}
+      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {kpis.map((k) => (
+          <div key={k.label} className="card p-4">
+            <div className="text-xs text-muted">{k.label}</div>
+            <div className="mt-2 text-2xl font-semibold tabular-nums">{k.value}</div>
+            <div className="mt-1 text-[11px] text-muted">{k.suffix}</div>
           </div>
         ))}
       </div>
 
-      {/* Charts */}
-      <div className="mt-6">
-        <StatsCharts daily={daily} macroKcal={macroKcal} />
-      </div>
+      {!hasData ? (
+        <div className="card mt-4 flex flex-col items-center gap-3 p-12 text-center">
+          <p className="text-muted">Δεν υπάρχουν καταγραφές στο επιλεγμένο διάστημα.</p>
+          <Link href="/history" className="rounded-xl bg-neon-green px-4 py-2 text-sm font-semibold text-[#06281a] transition hover:brightness-110">
+            + Καταγραφή γεύματος
+          </Link>
+        </div>
+      ) : (
+        <>
+          {/* Ημερήσιο γράφημα με εναλλαγή μετρικής */}
+          <div className="card mt-4 p-5">
+            <h2 className="mb-1 text-sm font-medium text-muted">Ημερήσια πρόσληψη</h2>
+            <DailyMetricChart daily={daily} goalCalories={goals.calories} />
+          </div>
+
+          {/* Τάση μακρο + κατανομή */}
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            <div className="card p-5 lg:col-span-2">
+              <h2 className="mb-3 text-sm font-medium text-muted">Τάση μακρο (g/ημέρα)</h2>
+              <MacroTrend daily={daily} />
+              <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted">
+                {(["protein", "carbs", "fats"] as const).map((k) => (
+                  <span key={k} className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full" style={{ background: MACRO_NEON[k] }} />
+                    {k === "protein" ? "Πρωτεΐνη" : k === "carbs" ? "Υδατάνθρακες" : "Λιπαρά"}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="card p-5">
+              <h2 className="mb-3 text-sm font-medium text-muted">Κατανομή μακρο (kcal)</h2>
+              <MacroDonut macroKcal={macroKcal} totalKcal={totals.calories} />
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                {[
+                  ["Π", totals.protein, MACRO_NEON.protein],
+                  ["Υ", totals.carbs, MACRO_NEON.carbs],
+                  ["Λ", totals.fats, MACRO_NEON.fats],
+                ].map(([lbl, val, col]) => (
+                  <div key={lbl as string} className="rounded-lg bg-surface-2 py-2">
+                    <div className="text-xs" style={{ color: col as string }}>{lbl as string}</div>
+                    <div className="text-sm font-semibold tabular-nums">{r(val as number)}g</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Ανά γεύμα + μέσος όρος vs στόχος */}
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="card p-5">
+              <h2 className="mb-3 text-sm font-medium text-muted">Θερμίδες ανά γεύμα</h2>
+              <SlotBars data={slotData} />
+            </div>
+
+            <div className="card p-5">
+              <h2 className="mb-3 text-sm font-medium text-muted">Μ.Ο. ημέρας vs στόχος</h2>
+              <div className="space-y-3">
+                {avgProgress.map((g) => {
+                  const pct = g.goal > 0 ? Math.min((g.value / g.goal) * 100, 100) : 0;
+                  return (
+                    <div key={g.label}>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted">{g.label}</span>
+                        <span className="tabular-nums text-foreground">
+                          {r(g.value)}<span className="text-muted">/{g.goal} {g.unit}</span>
+                        </span>
+                      </div>
+                      <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-2">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: g.color, boxShadow: `0 0 10px ${g.color}` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-4 text-[11px] text-muted">
+                Στόχοι από την ενότητα «Πλάνο».
+              </p>
+            </div>
+          </div>
+        </>
+      )}
     </main>
   );
 }

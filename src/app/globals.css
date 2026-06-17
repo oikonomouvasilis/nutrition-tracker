@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
+/* Dark-only neon theme. Η κλάση `dark` μπαίνει στο <html> ώστε όλα τα
+   υπάρχοντα `dark:` utilities να ενεργοποιούνται ανεξάρτητα από το OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0b10;
+  --foreground: #e8eaf2;
+  /* Σωστή απόδοση native controls (select popups, date pickers) σε dark —
+     χωρίς αυτό τα dropdowns εμφανίζονταν «διάφανα». */
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -10,17 +17,82 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Neon design tokens — χρησιμοποιούνται ως bg-surface, text-muted,
+     border-edge, text-neon-green κ.λπ. */
+  --color-bg: #0a0b10;
+  --color-surface: #12141d;
+  --color-surface-2: #181b27;
+  /* Απαλά, ημιδιάφανα borders που «δένουν» με το φόντο (αντί για σκληρή γραμμή). */
+  --color-edge: rgba(255, 255, 255, 0.07);
+  --color-edge-strong: rgba(255, 255, 255, 0.12);
+  --color-muted: #8b90a6;
+  --color-neon-green: #2dff95;
+  --color-neon-cyan: #29d6f5;
+  --color-neon-amber: #ffc34d;
+  --color-neon-pink: #ff5c8a;
+  --color-neon-violet: #a98bff;
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(1100px 560px at 100% -10%, rgba(45, 255, 149, 0.06), transparent 60%),
+    radial-gradient(900px 500px at -10% 0%, rgba(41, 214, 245, 0.05), transparent 55%),
+    var(--color-bg);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* Επιφάνεια κάρτας: ημιδιάφανο gradient που κάνει blend με το φόντο,
+   απαλό border + soft shadow αντί για σκληρή γραμμή. */
+.card {
+  border-radius: 1rem;
+  border: 1px solid var(--color-edge);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 40%),
+    color-mix(in oklab, var(--color-surface) 65%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.03),
+    0 12px 34px -20px rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+}
+
+/* Απαλή σκιά για panels/πίνακες χωρίς να βασίζονται σε σκληρό border. */
+.shadow-soft {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.03),
+    0 12px 34px -20px rgba(0, 0, 0, 0.85);
+}
+
+/* Native dropdown options: opaque dark background (όχι διάφανο). */
+option,
+optgroup {
+  background-color: #161924;
+  color: var(--foreground);
+}
+
+/* Λεπτό neon glow (π.χ. ενεργό nav item / KPI accent). */
+.glow-green {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-neon-green) 35%, transparent),
+    0 8px 30px -12px color-mix(in oklab, var(--color-neon-green) 55%, transparent);
+}
+
+/* Λεπτή neon μπάρα (gradient). */
+.neon-divider {
+  background: linear-gradient(90deg, transparent, var(--color-neon-green), transparent);
+}
+
+/* Διακριτικό scrollbar που ταιριάζει στο dark theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
 }

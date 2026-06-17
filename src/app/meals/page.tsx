@@ -2,20 +2,23 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
   type MealSlot,
-  MEAL_SLOT_LABELS,
   macrosForQuantity,
   sumMacros,
 } from "@/types/nutrition";
-import { deleteMeal } from "./actions";
+import Cookbook, { type Recipe } from "./cookbook";
 
 type MealRow = {
   id: string;
   name: string;
   meal_type: MealSlot | null;
+  description: string | null;
   meal_items:
     | {
         quantity: number;
+        position: number;
         foods: {
+          name: string;
+          unit: string;
           calories_per_100: number;
           protein_per_100: number;
           carbs_per_100: number;
@@ -25,90 +28,60 @@ type MealRow = {
     | null;
 };
 
-const fmt = (n: number) => Math.round(n);
-
 export default async function MealsPage() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("meals")
     .select(
-      "id, name, meal_type, meal_items(quantity, foods(calories_per_100, protein_per_100, carbs_per_100, fats_per_100))",
+      "id, name, meal_type, description, meal_items(quantity, position, foods(name, unit, calories_per_100, protein_per_100, carbs_per_100, fats_per_100))",
     )
     .order("name", { ascending: true });
 
-  const meals = (data ?? []) as unknown as MealRow[];
+  const rows = (data ?? []) as unknown as MealRow[];
+
+  const recipes: Recipe[] = rows.map((m) => {
+    const items = (m.meal_items ?? [])
+      .slice()
+      .sort((a, b) => a.position - b.position)
+      .map((it) => {
+        const macros = it.foods
+          ? macrosForQuantity(it.foods, it.quantity)
+          : { calories: 0, protein: 0, carbs: 0, fats: 0 };
+        return {
+          name: it.foods?.name ?? "—",
+          unit: it.foods?.unit ?? "g",
+          quantity: it.quantity,
+          ...macros,
+        };
+      });
+    return {
+      id: m.id,
+      name: m.name,
+      meal_type: m.meal_type,
+      description: m.description,
+      items,
+      totals: sumMacros(items),
+    };
+  });
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <header className="flex items-center justify-between">
+    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <Link href="/" className="text-sm text-zinc-500 hover:underline">
-            ← Αρχική
-          </Link>
-          <h1 className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-            🍽️ Γεύματα
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Συνταγές</h1>
+          <p className="mt-1 text-sm text-muted">
+            Το βιβλίο μαγειρικής σου — κάνε κλικ σε μια συνταγή για υλικά & μακρο.
+          </p>
         </div>
         <Link
           href="/meals/new"
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          className="rounded-xl bg-neon-green px-4 py-2.5 text-sm font-semibold text-[#06281a] transition hover:brightness-110"
         >
-          + Νέο γεύμα
+          + Νέα συνταγή
         </Link>
       </header>
 
-      {meals.length === 0 ? (
-        <p className="mt-10 rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-zinc-400 dark:border-zinc-700">
-          Δεν υπάρχουν γεύματα ακόμα. Πάτα «+ Νέο γεύμα».
-        </p>
-      ) : (
-        <ul className="mt-6 space-y-3">
-          {meals.map((meal) => {
-            const totals = sumMacros(
-              (meal.meal_items ?? []).map((it) =>
-                it.foods
-                  ? macrosForQuantity(it.foods, it.quantity)
-                  : { calories: 0, protein: 0, carbs: 0, fats: 0 },
-              ),
-            );
-            return (
-              <li
-                key={meal.id}
-                className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
-              >
-                <Link href={`/meals/${meal.id}`} className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-zinc-900 dark:text-zinc-50">
-                      {meal.name}
-                    </span>
-                    {meal.meal_type && (
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">
-                        {MEAL_SLOT_LABELS[meal.meal_type]}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1 text-sm tabular-nums text-zinc-500">
-                    {fmt(totals.calories)} kcal · Π {fmt(totals.protein)} · Υ{" "}
-                    {fmt(totals.carbs)} · Λ {fmt(totals.fats)} g
-                    <span className="ml-2 text-xs text-zinc-400">
-                      ({meal.meal_items?.length ?? 0} συστατικά)
-                    </span>
-                  </div>
-                </Link>
-                <form action={deleteMeal} className="ml-3">
-                  <input type="hidden" name="id" value={meal.id} />
-                  <button
-                    aria-label={`Διαγραφή ${meal.name}`}
-                    className="text-zinc-400 hover:text-red-600"
-                  >
-                    ✕
-                  </button>
-                </form>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <Cookbook recipes={recipes} />
     </main>
   );
 }

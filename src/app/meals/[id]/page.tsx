@@ -45,12 +45,12 @@ export default async function EditMealPage({
   };
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <Link href="/meals" className="text-sm text-zinc-500 hover:underline">
-        ← Γεύματα
+    <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 lg:px-8">
+      <Link href="/meals" className="text-sm text-muted transition hover:text-foreground">
+        ← Συνταγές
       </Link>
-      <h1 className="mt-1 mb-6 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-        Επεξεργασία γεύματος
+      <h1 className="mb-6 mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+        Επεξεργασία συνταγής
       </h1>
       <MealBuilder
         foods={(foods ?? []) as Food[]}

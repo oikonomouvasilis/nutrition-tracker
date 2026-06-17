@@ -1,17 +1,32 @@
-// Server-only. Δωρεάν εύρεση μακρο: Open Food Facts (text search) → Gemini (grounding).
+// Server-only. Δωρεάν εύρεση θρεπτικών στοιχείων:
+//   1) Open Food Facts (text search) -> πολλαπλά υποψήφια branded προϊόντα + σύνδεσμοι
+//   2) Gemini (Google Search grounding)  -> 1 εκτίμηση με μακρο + βιταμίνες/μέταλλα
+// + σύνδεσμοι αναζήτησης σε όλο το web ώστε ο χρήστης να επαληθεύσει/επιλέξει.
 //
 // PRIVACY BOUNDARY: στέλνουμε ΜΟΝΟ την περιγραφή τροφής στις εξωτερικές υπηρεσίες,
-// ΠΟΤΕ προσωπικά δεδομένα (ημερολόγιο, στατιστικά κ.λπ.). Το Gemini free tier
-// μπορεί να χρησιμοποιεί inputs για εκπαίδευση — γι' αυτό στέλνουμε μόνο όνομα τροφής.
+// ΠΟΤΕ προσωπικά δεδομένα (ημερολόγιο, στατιστικά κ.λπ.).
 
-export interface FoodLookupResult {
+import { NUTRIENTS, MICRO_JSON_KEYS } from "@/lib/nutrients";
+
+export interface FoodCandidate {
   name: string;
+  brand?: string;
   calories_per_100: number;
   protein_per_100: number;
   carbs_per_100: number;
   fats_per_100: number;
+  fiber_per_100?: number;
+  sugar_per_100?: number;
+  sodium_per_100?: number; // mg
+  micronutrients?: Record<string, number>;
   source: "openfoodfacts" | "ai";
   confidence?: "high" | "medium" | "low";
+  url?: string;
+}
+
+export interface FoodLookup {
+  candidates: FoodCandidate[];
+  searchLinks: { label: string; url: string }[];
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -21,31 +36,42 @@ function num(v: unknown, fallback = 0): number {
   return typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : fallback;
 }
 
+/** Καθαρίζει micronutrients object: μόνο γνωστά κλειδιά, θετικοί αριθμοί. */
+function cleanMicros(input: unknown): Record<string, number> | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    if (!MICRO_JSON_KEYS.has(k)) continue;
+    const n = num(v, -1);
+    if (n >= 0) out[k] = round1(n);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 // ---------------------------------------------------------------------------
-// Open Food Facts (δωρεάν, χωρίς key, ιδανικό για branded προϊόντα)
+// Open Food Facts (δωρεάν, χωρίς key) — πολλαπλά υποψήφια προϊόντα
 // ---------------------------------------------------------------------------
 type Nutriments = Record<string, number | string | undefined>;
 interface OffProduct {
+  code?: string;
   product_name?: string;
   brands?: string;
   nutriments?: Nutriments;
 }
 
-async function lookupOpenFoodFacts(
-  query: string,
-): Promise<FoodLookupResult | null> {
+async function lookupOpenFoodFacts(query: string): Promise<FoodCandidate[]> {
   try {
     const url =
       "https://world.openfoodfacts.org/cgi/search.pl?" +
       `search_terms=${encodeURIComponent(query)}` +
-      "&search_simple=1&action=process&json=1&page_size=5" +
-      "&fields=product_name,brands,nutriments";
+      "&search_simple=1&action=process&json=1&page_size=12" +
+      "&fields=code,product_name,brands,nutriments";
     const res = await fetch(url, {
       headers: { "User-Agent": "nutrition-tracker/1.0 (personal project)" },
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return null;
-    if (!res.headers.get("content-type")?.includes("json")) return null;
+    if (!res.ok) return [];
+    if (!res.headers.get("content-type")?.includes("json")) return [];
 
     const data = (await res.json()) as { products?: OffProduct[] };
     const tokens = query
@@ -53,35 +79,46 @@ async function lookupOpenFoodFacts(
       .split(/\s+/)
       .filter((t) => t.length >= 3);
 
+    const out: FoodCandidate[] = [];
     for (const p of data.products ?? []) {
       const n = p.nutriments ?? {};
       const cal = num(n["energy-kcal_100g"], -1);
       if (cal <= 0) continue;
 
       const label = `${p.brands ?? ""} ${p.product_name ?? ""}`.trim();
-      // relevance guard: το v2 endpoint αγνοεί το search_terms, οπότε
-      // δεχόμαστε μόνο αν το όνομα ταιριάζει με την αναζήτηση.
       const hay = label.toLowerCase();
       const relevant = tokens.length === 0 || tokens.some((t) => hay.includes(t));
       if (!relevant) continue;
 
-      return {
-        name: label || query,
+      // νάτριο: sodium_100g (g) ή από salt_100g (g) ÷ 2.5 -> mg
+      const sodiumG =
+        n["sodium_100g"] !== undefined
+          ? num(n["sodium_100g"])
+          : num(n["salt_100g"]) / 2.5;
+
+      out.push({
+        name: p.product_name?.trim() || label || query,
+        brand: p.brands?.split(",")[0]?.trim() || undefined,
         calories_per_100: round1(cal),
         protein_per_100: round1(num(n["proteins_100g"])),
         carbs_per_100: round1(num(n["carbohydrates_100g"])),
         fats_per_100: round1(num(n["fat_100g"])),
+        fiber_per_100: n["fiber_100g"] !== undefined ? round1(num(n["fiber_100g"])) : undefined,
+        sugar_per_100: n["sugars_100g"] !== undefined ? round1(num(n["sugars_100g"])) : undefined,
+        sodium_per_100: sodiumG > 0 ? Math.round(sodiumG * 1000) : undefined,
         source: "openfoodfacts",
-      };
+        url: p.code ? `https://world.openfoodfacts.org/product/${p.code}` : undefined,
+      });
+      if (out.length >= 6) break;
     }
-    return null;
+    return out;
   } catch {
-    return null;
+    return [];
   }
 }
 
 // ---------------------------------------------------------------------------
-// Gemini (free tier) + Google Search grounding
+// Gemini (free tier) + Google Search grounding — 1 εκτίμηση με βιταμίνες
 // ---------------------------------------------------------------------------
 interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
@@ -99,17 +136,24 @@ function extractJson(text: string): Record<string, unknown> | null {
   }
 }
 
-async function lookupGemini(query: string): Promise<FoodLookupResult | null> {
+async function lookupGemini(query: string): Promise<FoodCandidate | null> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
 
+  const microSpec = NUTRIENTS.filter((nu) => nu.storage === "json")
+    .map((nu) => `"${nu.key}"(${nu.unit})`)
+    .join(", ");
+
   const prompt =
     `Τροφή ή προϊόν: "${query}".\n` +
-    "Βρες τα μακροθρεπτικά στοιχεία ΑΝΑ 100 γραμμάρια (ή 100ml αν είναι υγρό), " +
-    "χρησιμοποιώντας αξιόπιστες πηγές.\n" +
+    "Βρες τα θρεπτικά στοιχεία ΑΝΑ 100 γραμμάρια (ή 100ml αν είναι υγρό), από αξιόπιστες πηγές.\n" +
     "Απάντησε ΜΟΝΟ με ένα JSON object, χωρίς άλλο κείμενο:\n" +
     '{"name":"σύντομο όνομα","calories_per_100":number,"protein_per_100":number,' +
-    '"carbs_per_100":number,"fats_per_100":number,"confidence":"high|medium|low"}';
+    '"carbs_per_100":number,"fats_per_100":number,"fiber_per_100":number,' +
+    '"sugar_per_100":number,"sodium_per_100":number(mg),' +
+    '"micronutrients":{...},"confidence":"high|medium|low"}\n' +
+    `Στο micronutrients βάλε όσα γνωρίζεις, με ΑΚΡΙΒΩΣ αυτά τα κλειδιά & μονάδες: ${microSpec}. ` +
+    "Παράλειψε όσα δεν γνωρίζεις (μη βάζεις 0 ή null).";
 
   const endpoint =
     "https://generativelanguage.googleapis.com/v1beta/models/" +
@@ -133,7 +177,6 @@ async function lookupGemini(query: string): Promise<FoodLookupResult | null> {
       res = null;
     }
     if (res?.ok) break;
-    // retry σε υπερφόρτωση/rate-limit
     if (attempt < 2 && (!res || res.status === 503 || res.status === 429)) {
       await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
       continue;
@@ -159,6 +202,10 @@ async function lookupGemini(query: string): Promise<FoodLookupResult | null> {
     protein_per_100: round1(num(parsed.protein_per_100)),
     carbs_per_100: round1(num(parsed.carbs_per_100)),
     fats_per_100: round1(num(parsed.fats_per_100)),
+    fiber_per_100: parsed.fiber_per_100 !== undefined ? round1(num(parsed.fiber_per_100)) : undefined,
+    sugar_per_100: parsed.sugar_per_100 !== undefined ? round1(num(parsed.sugar_per_100)) : undefined,
+    sodium_per_100: parsed.sodium_per_100 !== undefined ? round1(num(parsed.sodium_per_100)) : undefined,
+    micronutrients: cleanMicros(parsed.micronutrients),
     source: "ai",
     confidence:
       conf === "high" || conf === "medium" || conf === "low" ? conf : undefined,
@@ -166,12 +213,29 @@ async function lookupGemini(query: string): Promise<FoodLookupResult | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Orchestrator: δωρεάν DB πρώτα, μετά AI fallback.
+// Orchestrator
 // ---------------------------------------------------------------------------
-export async function lookupFood(
-  query: string,
-): Promise<FoodLookupResult | null> {
+export async function lookupFood(query: string): Promise<FoodLookup> {
   const q = query.trim();
-  if (!q) return null;
-  return (await lookupOpenFoodFacts(q)) ?? (await lookupGemini(q));
+  const searchLinks = q
+    ? [
+        {
+          label: "Αναζήτηση Google",
+          url: `https://www.google.com/search?q=${encodeURIComponent(q + " θρεπτική αξία ανά 100g")}`,
+        },
+        {
+          label: "Open Food Facts",
+          url: `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process`,
+        },
+      ]
+    : [];
+
+  if (!q) return { candidates: [], searchLinks };
+
+  // OFF + Gemini παράλληλα· τα branded προϊόντα μπαίνουν πρώτα, μετά η AI εκτίμηση.
+  const [off, ai] = await Promise.all([lookupOpenFoodFacts(q), lookupGemini(q)]);
+  const candidates: FoodCandidate[] = [...off];
+  if (ai) candidates.push(ai);
+
+  return { candidates, searchLinks };
 }

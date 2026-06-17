@@ -27,8 +27,5 @@ export async function POST(request: Request) {
   }
 
   const result = await lookupFood(query);
-  if (!result) {
-    return Response.json({ error: "not_found" }, { status: 404 });
-  }
   return Response.json(result);
 }

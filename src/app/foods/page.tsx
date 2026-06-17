@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import type { Food } from "@/types/nutrition";
-import { deleteFood, importStarterFoods } from "./actions";
+import { importStarterFoods } from "./actions";
 import AddFoodForm from "./add-food-form";
+import FoodsTable from "./foods-table";
 
 export default async function FoodsPage() {
   const supabase = await createClient();
@@ -14,76 +14,28 @@ export default async function FoodsPage() {
   const list = (foods ?? []) as Food[];
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <header className="flex items-center justify-between">
+    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <Link href="/" className="text-sm text-zinc-500 hover:underline">
-            ← Αρχική
-          </Link>
-          <h1 className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-            🍎 Τροφές
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Τροφές</h1>
+          <p className="mt-1 text-sm text-muted">
+            Η βάση τροφών σου — μακροθρεπτικά, βιταμίνες & μέταλλα ανά 100 g/ml.
+          </p>
         </div>
         {list.length === 0 && (
           <form action={importStarterFoods}>
-            <button className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
+            <button className="rounded-xl border border-edge px-3 py-2 text-sm font-medium text-muted transition hover:border-neon-green/50 hover:text-foreground">
               Εισαγωγή starter τροφών
             </button>
           </form>
         )}
       </header>
 
-      {/* Add food (με δυνατότητα αυτόματης εύρεσης μακρο) */}
+      {/* Χειροκίνητη / AI εισαγωγή */}
       <AddFoodForm />
 
-      {/* List */}
-      <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-zinc-500 dark:bg-zinc-900">
-            <tr>
-              <th className="px-4 py-2 font-medium">Τροφή</th>
-              <th className="px-3 py-2 text-right font-medium">Θερμ.</th>
-              <th className="px-3 py-2 text-right font-medium">Π</th>
-              <th className="px-3 py-2 text-right font-medium">Υ</th>
-              <th className="px-3 py-2 text-right font-medium">Λ</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {list.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-400">
-                  Δεν υπάρχουν τροφές ακόμα. Πρόσθεσε μία ή κάνε «Εισαγωγή starter τροφών».
-                </td>
-              </tr>
-            ) : (
-              list.map((f) => (
-                <tr key={f.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                  <td className="px-4 py-2 text-zinc-900 dark:text-zinc-100">
-                    {f.name}
-                    <span className="ml-1 text-xs text-zinc-400">/{f.unit}</span>
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{f.calories_per_100}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{f.protein_per_100}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{f.carbs_per_100}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{f.fats_per_100}</td>
-                  <td className="px-3 py-2 text-right">
-                    <form action={deleteFood}>
-                      <input type="hidden" name="id" value={f.id} />
-                      <button
-                        className="text-zinc-400 hover:text-red-600"
-                        aria-label={`Διαγραφή ${f.name}`}
-                      >
-                        ✕
-                      </button>
-                    </form>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* Λίστα με αναζήτηση, ταξινόμηση & δυναμικές στήλες */}
+      <FoodsTable foods={list} />
     </main>
   );
 }

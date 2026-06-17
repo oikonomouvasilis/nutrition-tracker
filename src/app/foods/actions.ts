@@ -2,7 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { MICRO_JSON_KEYS } from "@/lib/nutrients";
 import starterFoods from "@/data/starter-foods.json";
+
+/** Προαιρετική μη-αρνητική αριθμητική τιμή· "" / άκυρο -> null. */
+function optNum(v: FormDataEntryValue | null): number | null {
+  if (v === null) return null;
+  const s = String(v).trim();
+  if (s === "") return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
 
 export async function addFood(formData: FormData) {
   const supabase = await createClient();
@@ -14,6 +24,21 @@ export async function addFood(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
 
+  // micronutrients: JSON string -> κρατάμε μόνο γνωστά κλειδιά & θετικούς αριθμούς
+  const micronutrients: Record<string, number> = {};
+  try {
+    const raw = JSON.parse(String(formData.get("micronutrients") ?? "{}"));
+    if (raw && typeof raw === "object") {
+      for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (!MICRO_JSON_KEYS.has(k)) continue;
+        const n = Number(v);
+        if (Number.isFinite(n) && n >= 0) micronutrients[k] = n;
+      }
+    }
+  } catch {
+    // αγνοούμε άκυρο JSON
+  }
+
   await supabase.from("foods").insert({
     user_id: user.id,
     name,
@@ -22,6 +47,10 @@ export async function addFood(formData: FormData) {
     protein_per_100: Number(formData.get("protein") ?? 0),
     carbs_per_100: Number(formData.get("carbs") ?? 0),
     fats_per_100: Number(formData.get("fats") ?? 0),
+    fiber_per_100: optNum(formData.get("fiber")),
+    sugar_per_100: optNum(formData.get("sugar")),
+    sodium_per_100: optNum(formData.get("sodium")),
+    micronutrients,
   });
 
   revalidatePath("/foods");

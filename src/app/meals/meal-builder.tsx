@@ -31,7 +31,7 @@ interface Props {
 }
 
 const inputCls =
-  "rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-800";
+  "rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-muted/70 focus:border-neon-green/60";
 
 const fmt = (n: number) => Math.round(n * 10) / 10;
 
@@ -116,13 +116,13 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
 
   if (foods.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-        <p className="text-zinc-500">
-          Δεν έχεις τροφές ακόμα. Πρόσθεσε τροφές πρώτα για να φτιάξεις γεύμα.
+      <div className="card p-8 text-center">
+        <p className="text-muted">
+          Δεν έχεις τροφές ακόμα. Πρόσθεσε τροφές πρώτα για να φτιάξεις συνταγή.
         </p>
         <Link
           href="/foods"
-          className="mt-4 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900"
+          className="mt-4 inline-block rounded-xl bg-neon-green px-4 py-2 text-sm font-semibold text-[#06281a] transition hover:brightness-110"
         >
           → Στις Τροφές
         </Link>
@@ -137,7 +137,7 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Όνομα γεύματος"
+          placeholder="Όνομα συνταγής"
           className={`${inputCls} sm:col-span-2`}
         />
         <select
@@ -161,26 +161,24 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
       </div>
 
       {/* Ingredients */}
-      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Συστατικά
-          </h2>
+      <div className="card overflow-hidden p-0">
+        <div className="flex items-center justify-between border-b border-edge px-4 py-3">
+          <h2 className="text-sm font-medium text-muted">Υλικά</h2>
           <button
             type="button"
             onClick={addItem}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            className="rounded-lg border border-edge px-3 py-1.5 text-sm text-muted transition hover:border-neon-green/50 hover:text-foreground"
           >
             + Προσθήκη
           </button>
         </div>
 
         {items.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-zinc-400">
-            Δεν υπάρχουν συστατικά. Πάτα «+ Προσθήκη».
+          <p className="px-4 py-8 text-center text-sm text-muted">
+            Δεν υπάρχουν υλικά. Πάτα «+ Προσθήκη».
           </p>
         ) : (
-          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          <ul className="divide-y divide-edge">
             {items.map((it) => {
               const food = foodsById.get(it.food_id);
               const m = food
@@ -215,11 +213,11 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
                       }
                       className={`${inputCls} w-24 text-right`}
                     />
-                    <span className="text-xs text-zinc-400">
+                    <span className="text-xs text-muted">
                       {food?.unit ?? "g"}
                     </span>
                   </div>
-                  <span className="w-44 text-right text-xs tabular-nums text-zinc-500">
+                  <span className="w-44 text-right text-xs tabular-nums text-muted">
                     {fmt(m.calories)} kcal · {fmt(m.protein)}/{fmt(m.carbs)}/
                     {fmt(m.fats)}
                   </span>
@@ -227,7 +225,7 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
                     type="button"
                     onClick={() => removeItem(it.key)}
                     aria-label="Αφαίρεση"
-                    className="text-zinc-400 hover:text-red-600"
+                    className="text-muted transition hover:text-neon-pink"
                   >
                     ✕
                   </button>
@@ -248,21 +246,18 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
             ["Λιπαρά", totals.fats, "g"],
           ] as const
         ).map(([label, value, suffix]) => (
-          <div
-            key={label}
-            className="rounded-xl border border-zinc-200 bg-white p-3 text-center dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <div className="text-xs text-zinc-400">{label}</div>
-            <div className="text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+          <div key={label} className="card p-3 text-center">
+            <div className="text-xs text-muted">{label}</div>
+            <div className="text-lg font-semibold tabular-nums text-foreground">
               {fmt(value)}
             </div>
-            <div className="text-xs text-zinc-400">{suffix}</div>
+            <div className="text-xs text-muted">{suffix}</div>
           </div>
         ))}
       </div>
 
       {error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-300">
+        <p className="rounded-lg border border-neon-pink/30 bg-neon-pink/10 px-3 py-2 text-sm text-neon-pink">
           {error}
         </p>
       )}
@@ -271,13 +266,13 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
         <button
           onClick={save}
           disabled={saving}
-          className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          className="rounded-xl bg-neon-green px-5 py-2 text-sm font-semibold text-[#06281a] transition hover:brightness-110 disabled:opacity-50"
         >
           {saving ? "Αποθήκευση…" : mealId ? "Ενημέρωση" : "Αποθήκευση"}
         </button>
         <Link
           href="/meals"
-          className="rounded-lg border border-zinc-300 px-5 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          className="rounded-xl border border-edge px-5 py-2 text-sm font-medium text-muted transition hover:text-foreground"
         >
           Άκυρο
         </Link>
