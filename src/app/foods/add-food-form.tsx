@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { addFood } from "./actions";
 import {
@@ -56,11 +56,6 @@ export default function AddFoodForm() {
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [links, setLinks] = useState<{ label: string; url: string }[]>([]);
 
-  const availableNutrients = useMemo(
-    () => NUTRIENTS.filter((n) => !(n.key in extras)),
-    [extras],
-  );
-
   function reset() {
     setName("");
     setCalories("");
@@ -74,9 +69,15 @@ export default function AddFoodForm() {
     setLinks([]);
   }
 
-  function addExtra(key: string) {
-    if (!key) return;
-    setExtras((e) => (key in e ? e : { ...e, [key]: "" }));
+  function toggleExtra(key: string) {
+    setExtras((e) => {
+      if (key in e) {
+        const next = { ...e };
+        delete next[key];
+        return next;
+      }
+      return { ...e, [key]: "" };
+    });
   }
   function setExtra(key: string, value: string) {
     setExtras((e) => ({ ...e, [key]: value }));
@@ -323,29 +324,41 @@ export default function AddFoodForm() {
           <span className="text-xs font-medium text-muted">
             Επιπλέον θρεπτικά <span className="text-muted/70">(προαιρετικά)</span>
           </span>
-          <select
-            value=""
-            onChange={(e) => {
-              addExtra(e.target.value);
-              e.target.value = "";
-            }}
-            className="rounded-lg border border-edge bg-surface-2 px-2 py-1.5 text-xs text-foreground outline-none focus:border-neon-green/60"
-          >
-            <option value="">+ Προσθήκη θρεπτικού…</option>
-            {GROUPS.map((g) => {
-              const opts = availableNutrients.filter((n) => n.group === g);
-              if (opts.length === 0) return null;
-              return (
-                <optgroup key={g} label={GROUP_LABELS[g]}>
-                  {opts.map((n) => (
-                    <option key={n.key} value={n.key}>
-                      {n.label} ({n.unit})
-                    </option>
+          <details className="group relative">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-xs text-foreground transition hover:border-neon-green/50 [&::-webkit-details-marker]:hidden">
+              + Επιλογή θρεπτικών
+              {Object.keys(extras).length > 0 && (
+                <span className="rounded-full bg-neon-green/15 px-1.5 text-neon-green">
+                  {Object.keys(extras).length}
+                </span>
+              )}
+              <span className="text-muted transition group-open:rotate-180">▾</span>
+            </summary>
+            <div className="absolute right-0 z-20 mt-2 max-h-72 w-64 overflow-y-auto rounded-xl border border-edge bg-surface p-2 shadow-xl">
+              {GROUPS.map((g) => (
+                <div key={g} className="mb-1">
+                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                    {GROUP_LABELS[g]}
+                  </div>
+                  {NUTRIENTS.filter((n) => n.group === g).map((n) => (
+                    <label
+                      key={n.key}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-white/5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={n.key in extras}
+                        onChange={() => toggleExtra(n.key)}
+                        className="accent-[var(--color-neon-green)]"
+                      />
+                      <span className="flex-1">{n.label}</span>
+                      <span className="text-[10px] text-muted">{n.unit}</span>
+                    </label>
                   ))}
-                </optgroup>
-              );
-            })}
-          </select>
+                </div>
+              ))}
+            </div>
+          </details>
         </div>
 
         {Object.keys(extras).length > 0 && (

@@ -96,3 +96,32 @@ optgroup {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 9999px;
 }
+
+/* ── Φουτουριστικό φόντο οθόνης εισαγωγής ──────────────────────────────── */
+@keyframes auth-blob {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(40px, -30px, 0) scale(1.12); }
+  66% { transform: translate3d(-30px, 25px, 0) scale(0.92); }
+}
+@keyframes auth-grid {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 48px 48px, 48px 48px; }
+}
+@keyframes auth-scan {
+  0% { transform: translateY(-10vh); opacity: 0; }
+  10%, 90% { opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+.auth-blob { animation: auth-blob 16s ease-in-out infinite; }
+.auth-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: auth-grid 20s linear infinite;
+}
+.auth-scan { animation: auth-scan 8s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-blob, .auth-grid, .auth-scan { animation: none; }
+}
