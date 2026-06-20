@@ -58,6 +58,8 @@ export interface LogEntry {
   protein: number;
   carbs: number;
   fats: number;
+  // Snapshot επιπλέον θρεπτικών (ίνες/σάκχαρα/νάτριο + μικροθρεπτικά), key→σύνολο.
+  nutrients: Record<string, number>;
   created_at: string;
 }
 

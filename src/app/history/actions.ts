@@ -7,6 +7,10 @@ import {
   macrosForQuantity,
   sumMacros,
 } from "@/types/nutrition";
+import {
+  nutrientTotalsForQuantity,
+  sumNutrientTotals,
+} from "@/lib/nutrients";
 
 type LogResult = { ok: true } | { error: string };
 
@@ -15,6 +19,14 @@ type Per100 = {
   protein_per_100: number;
   carbs_per_100: number;
   fats_per_100: number;
+};
+
+type FoodNutriRow = Per100 & {
+  id: string;
+  fiber_per_100: number | null;
+  sugar_per_100: number | null;
+  sodium_per_100: number | null;
+  micronutrients: Record<string, number>;
 };
 
 /**
@@ -44,11 +56,13 @@ export async function logMeal(input: {
   const foodIds = [...new Set(input.items.map((it) => it.food_id))];
   const { data: foods } = await supabase
     .from("foods")
-    .select("id, calories_per_100, protein_per_100, carbs_per_100, fats_per_100")
+    .select(
+      "id, calories_per_100, protein_per_100, carbs_per_100, fats_per_100, fiber_per_100, sugar_per_100, sodium_per_100, micronutrients",
+    )
     .in("id", foodIds);
 
   const per100 = new Map(
-    ((foods ?? []) as (Per100 & { id: string })[]).map((f) => [f.id, f]),
+    ((foods ?? []) as FoodNutriRow[]).map((f) => [f.id, f]),
   );
 
   const totals = sumMacros(
@@ -56,6 +70,14 @@ export async function logMeal(input: {
       const f = per100.get(it.food_id);
       const q = Number(it.quantity) || 0;
       return f ? macrosForQuantity(f, q) : { calories: 0, protein: 0, carbs: 0, fats: 0 };
+    }),
+  );
+
+  // Snapshot επιπλέον θρεπτικών (ίνες/σάκχαρα/νάτριο + μικροθρεπτικά).
+  const nutrients = sumNutrientTotals(
+    input.items.map((it) => {
+      const f = per100.get(it.food_id);
+      return f ? nutrientTotalsForQuantity(f, Number(it.quantity) || 0) : {};
     }),
   );
 
@@ -69,6 +91,7 @@ export async function logMeal(input: {
     protein: totals.protein,
     carbs: totals.carbs,
     fats: totals.fats,
+    nutrients,
   });
   if (error) return { error: error.message };
 
@@ -100,11 +123,11 @@ export async function logFoods(input: {
   const { data: foods } = await supabase
     .from("foods")
     .select(
-      "id, name, unit, calories_per_100, protein_per_100, carbs_per_100, fats_per_100",
+      "id, name, unit, calories_per_100, protein_per_100, carbs_per_100, fats_per_100, fiber_per_100, sugar_per_100, sodium_per_100, micronutrients",
     )
     .in("id", foodIds);
 
-  type Row = Per100 & { id: string; name: string; unit: string };
+  type Row = FoodNutriRow & { name: string; unit: string };
   const byId = new Map(((foods ?? []) as Row[]).map((f) => [f.id, f]));
 
   const totals = sumMacros(
@@ -112,6 +135,14 @@ export async function logFoods(input: {
       const f = byId.get(it.food_id);
       const q = Number(it.quantity) || 0;
       return f ? macrosForQuantity(f, q) : { calories: 0, protein: 0, carbs: 0, fats: 0 };
+    }),
+  );
+
+  // Snapshot επιπλέον θρεπτικών (ίνες/σάκχαρα/νάτριο + μικροθρεπτικά).
+  const nutrients = sumNutrientTotals(
+    items.map((it) => {
+      const f = byId.get(it.food_id);
+      return f ? nutrientTotalsForQuantity(f, Number(it.quantity) || 0) : {};
     }),
   );
 
@@ -142,6 +173,7 @@ export async function logFoods(input: {
     protein: totals.protein,
     carbs: totals.carbs,
     fats: totals.fats,
+    nutrients,
   });
   if (error) return { error: error.message };
 

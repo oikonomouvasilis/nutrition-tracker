@@ -72,6 +72,48 @@ export function CaloriesBars({
   );
 }
 
+const RAD = Math.PI / 180;
+
+/** Glassmorphic ετικέτα πάνω σε κάθε τμήμα του donut (ποιο μακρο είναι). */
+function renderGlassLabel(props: {
+  cx?: number | string;
+  cy?: number | string;
+  midAngle?: number;
+  innerRadius?: number;
+  outerRadius?: number;
+  name?: string | number;
+  fill?: string;
+}) {
+  const cx = Number(props.cx) || 0;
+  const cy = Number(props.cy) || 0;
+  const midAngle = props.midAngle ?? 0;
+  const innerRadius = Number(props.innerRadius) || 0;
+  const outerRadius = Number(props.outerRadius) || 0;
+  const name = String(props.name ?? "");
+  const fill = props.fill ?? "transparent";
+  const rr = innerRadius + (outerRadius - innerRadius) * 0.5;
+  const x = cx + rr * Math.cos(-midAngle * RAD);
+  const y = cy + rr * Math.sin(-midAngle * RAD);
+  const w = 108;
+  const h = 20;
+  return (
+    <foreignObject
+      x={x - w / 2}
+      y={y - h / 2}
+      width={w}
+      height={h}
+      style={{ overflow: "visible", pointerEvents: "none" }}
+    >
+      <div className="flex h-full items-center justify-center">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-medium text-foreground shadow-sm backdrop-blur-md">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: fill }} />
+          {name}
+        </span>
+      </div>
+    </foreignObject>
+  );
+}
+
 export function MacroDonut({
   macroKcal,
   totalKcal,
@@ -106,6 +148,9 @@ export function MacroDonut({
             outerRadius={100}
             paddingAngle={3}
             stroke="none"
+            label={renderGlassLabel}
+            labelLine={false}
+            isAnimationActive={false}
           >
             {data.map((d) => (
               <Cell key={d.name} fill={d.fill} />

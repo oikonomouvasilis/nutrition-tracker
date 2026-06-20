@@ -78,3 +78,45 @@ export function nutrientValue(food: Food, def: NutrientDef): number | null {
 export const MICRO_JSON_KEYS = new Set(
   NUTRIENTS.filter((n) => n.storage === "json").map((n) => n.key),
 );
+
+type NutrientSource = Pick<
+  Food,
+  "fiber_per_100" | "sugar_per_100" | "sodium_per_100" | "micronutrients"
+>;
+
+/**
+ * Σύνολα θρεπτικών (key→ποσότητα) για μια τροφή σε ποσότητα q (g/ml).
+ * Παραλείπει μηδενικά/άγνωστα. Χρησιμοποιείται για το snapshot στο log_entries.
+ */
+export function nutrientTotalsForQuantity(
+  food: NutrientSource,
+  quantity: number,
+): Record<string, number> {
+  const factor = (Number(quantity) || 0) / 100;
+  const out: Record<string, number> = {};
+  for (const def of NUTRIENTS) {
+    let per100: number | null = null;
+    if (def.storage === "column" && def.column) {
+      const v = (food as Record<string, unknown>)[def.column];
+      per100 = typeof v === "number" ? v : null;
+    } else {
+      const v = food.micronutrients?.[def.key];
+      per100 = typeof v === "number" ? v : null;
+    }
+    if (per100 != null && per100 !== 0) out[def.key] = per100 * factor;
+  }
+  return out;
+}
+
+/** Άθροισμα πολλών nutrient-totals (key→ποσότητα). */
+export function sumNutrientTotals(
+  parts: Record<string, number>[],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const p of parts) {
+    for (const [k, v] of Object.entries(p)) {
+      out[k] = (out[k] ?? 0) + (Number(v) || 0);
+    }
+  }
+  return out;
+}

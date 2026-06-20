@@ -14,8 +14,10 @@ import {
   todayISO,
 } from "@/lib/date";
 import { getUserGoals } from "@/lib/goals-data";
+import { NUTRIENTS } from "@/lib/nutrients";
 import {
   DailyMetricChart,
+  type DailyPoint,
   MacroDonut,
   MacroTrend,
   SlotBars,
@@ -31,6 +33,7 @@ type Entry = {
   protein: number;
   carbs: number;
   fats: number;
+  nutrients: Record<string, number> | null;
 };
 
 const PRESETS = [
@@ -53,7 +56,7 @@ export default async function StatsPage({
   const goals = await getUserGoals();
   const { data } = await supabase
     .from("log_entries")
-    .select("entry_date, slot, calories, protein, carbs, fats")
+    .select("entry_date, slot, calories, protein, carbs, fats, nutrients")
     .gte("entry_date", from)
     .lte("entry_date", to);
 
@@ -66,6 +69,11 @@ export default async function StatsPage({
     days.map((d) => [d, { calories: 0, protein: 0, carbs: 0, fats: 0 }]),
   );
   const bySlot = new Map<MealSlot, number>(MEAL_SLOTS.map((s) => [s, 0]));
+  // Επιπλέον θρεπτικά: σύνολα ανά ημέρα + γενικό σύνολο (για να ξέρουμε ποια έχουν δεδομένα).
+  const nutrientByDay = new Map<string, Record<string, number>>(
+    days.map((d) => [d, {}]),
+  );
+  const nutrientTotalsAll: Record<string, number> = {};
 
   for (const e of entries) {
     const agg = byDay.get(e.entry_date);
@@ -76,17 +84,33 @@ export default async function StatsPage({
       agg.fats += e.fats;
     }
     bySlot.set(e.slot, (bySlot.get(e.slot) ?? 0) + e.calories);
+
+    const dn = nutrientByDay.get(e.entry_date);
+    for (const [k, v] of Object.entries(e.nutrients ?? {})) {
+      const num = Number(v) || 0;
+      if (dn) dn[k] = (dn[k] ?? 0) + num;
+      nutrientTotalsAll[k] = (nutrientTotalsAll[k] ?? 0) + num;
+    }
   }
 
-  const daily = days.map((d) => {
+  // Μόνο τα θρεπτικά που έχουν δεδομένα στο διάστημα (για το menu «+ Άλλα»).
+  const availableNutrientKeys = NUTRIENTS.filter(
+    (n) => (nutrientTotalsAll[n.key] ?? 0) > 0,
+  ).map((n) => n.key);
+
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const daily: DailyPoint[] = days.map((d) => {
     const v = byDay.get(d)!;
-    return {
+    const dn = nutrientByDay.get(d)!;
+    const point: DailyPoint = {
       label: formatShortGreek(d),
       calories: r(v.calories),
       protein: r(v.protein),
       carbs: r(v.carbs),
       fats: r(v.fats),
     };
+    for (const k of availableNutrientKeys) point[k] = r1(dn[k] ?? 0);
+    return point;
   });
 
   const slotData = MEAL_SLOTS.map((s) => ({
@@ -205,7 +229,11 @@ export default async function StatsPage({
           {/* Ημερήσιο γράφημα με εναλλαγή μετρικής */}
           <div className="card mt-4 p-5">
             <h2 className="mb-1 text-sm font-medium text-muted">Ημερήσια πρόσληψη</h2>
-            <DailyMetricChart daily={daily} goalCalories={goals.calories} />
+            <DailyMetricChart
+              daily={daily}
+              goalCalories={goals.calories}
+              availableNutrientKeys={availableNutrientKeys}
+            />
           </div>
 
           {/* Τάση μακρο + κατανομή */}
