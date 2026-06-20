@@ -11,6 +11,7 @@ import {
 } from "@/types/nutrition";
 import { logMeal, logFoods } from "./actions";
 import FoodPicker from "@/app/meals/food-picker";
+import MealPicker from "./meal-picker";
 
 export interface MealItemOption {
   food_id: string;
@@ -86,6 +87,7 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
   const [foodName, setFoodName] = useState("");
   const [foodItems, setFoodItems] = useState<FoodItem[]>([]);
   const [picker, setPicker] = useState<PickerState | null>(null);
+  const [mealPickerOpen, setMealPickerOpen] = useState(false);
 
   const foodsById = useMemo(
     () => new Map(foods.map((f) => [f.id, f])),
@@ -250,11 +252,16 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
       {mode === "meal" ? (
         hasMeals ? (
           <div className="space-y-2">
-            <select value={mealId} onChange={(e) => loadMeal(e.target.value)} className={`${inputCls} w-full`}>
-              {meals.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
+            <button
+              type="button"
+              onClick={() => setMealPickerOpen(true)}
+              className={`${inputCls} flex w-full items-center justify-between text-left`}
+            >
+              <span className="min-w-0 truncate">
+                {meals.find((mm) => mm.id === mealId)?.name ?? "Επιλογή συνταγής…"}
+              </span>
+              <span className="ml-2 shrink-0 text-muted">▾</span>
+            </button>
 
             {/* Ρυθμιζόμενα υλικά: αλλαγή (tap στο όνομα) / προσθήκη / αφαίρεση */}
             {items.length > 0 && (
@@ -423,6 +430,14 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
           onSelect={handlePick}
           onClose={() => setPicker(null)}
           title={picker.mode === "add" ? "Προσθήκη τροφής" : "Αλλαγή τροφής"}
+        />
+      )}
+
+      {mealPickerOpen && (
+        <MealPicker
+          meals={meals}
+          onSelect={(mm) => loadMeal(mm.id)}
+          onClose={() => setMealPickerOpen(false)}
         />
       )}
     </div>

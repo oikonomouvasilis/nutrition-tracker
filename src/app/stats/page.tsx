@@ -93,8 +93,10 @@ export default async function StatsPage({
     }
   }
 
-  // Μόνο τα θρεπτικά που έχουν δεδομένα στο διάστημα (για το menu «+ Άλλα»).
-  const availableNutrientKeys = NUTRIENTS.filter(
+  // Όλα τα θρεπτικά μπαίνουν στα δεδομένα (το menu «+ Άλλα» τα δείχνει πάντα),
+  // και ξεχωριστά ποια έχουν δεδομένα στο διάστημα (για ένδειξη στο menu).
+  const allNutrientKeys = NUTRIENTS.map((n) => n.key);
+  const nutrientKeysWithData = NUTRIENTS.filter(
     (n) => (nutrientTotalsAll[n.key] ?? 0) > 0,
   ).map((n) => n.key);
 
@@ -109,7 +111,7 @@ export default async function StatsPage({
       carbs: r(v.carbs),
       fats: r(v.fats),
     };
-    for (const k of availableNutrientKeys) point[k] = r1(dn[k] ?? 0);
+    for (const k of allNutrientKeys) point[k] = r1(dn[k] ?? 0);
     return point;
   });
 
@@ -232,7 +234,7 @@ export default async function StatsPage({
             <DailyMetricChart
               daily={daily}
               goalCalories={goals.calories}
-              availableNutrientKeys={availableNutrientKeys}
+              nutrientKeysWithData={nutrientKeysWithData}
             />
           </div>
 

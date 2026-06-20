@@ -16,8 +16,8 @@ import {
 import { MACRO_NEON, MacroDonut } from "../_components/dashboard-charts";
 import {
   GROUP_LABELS,
+  NUTRIENTS,
   NUTRIENT_BY_KEY,
-  type NutrientDef,
   type NutrientGroup,
 } from "@/lib/nutrients";
 
@@ -68,23 +68,20 @@ const GROUP_ORDER: NutrientGroup[] = ["extended", "vitamin", "mineral"];
 export function DailyMetricChart({
   daily,
   goalCalories,
-  availableNutrientKeys = [],
+  nutrientKeysWithData = [],
 }: {
   daily: DailyPoint[];
   goalCalories: number;
-  availableNutrientKeys?: string[];
+  nutrientKeysWithData?: string[];
 }) {
   const [metric, setMetric] = useState<string>("calories");
   const [selectedExtras, setSelectedExtras] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // NutrientDefs για όσα θρεπτικά υπάρχουν στα δεδομένα του διαστήματος.
-  const extraDefs = useMemo(
-    () =>
-      availableNutrientKeys
-        .map((k) => NUTRIENT_BY_KEY[k])
-        .filter((d): d is NutrientDef => Boolean(d)),
-    [availableNutrientKeys],
+  // Ποια θρεπτικά έχουν δεδομένα στο διάστημα (μικρή ένδειξη στο menu).
+  const withData = useMemo(
+    () => new Set(nutrientKeysWithData),
+    [nutrientKeysWithData],
   );
 
   const activeMetrics: Metric[] = [
@@ -118,9 +115,9 @@ export function DailyMetricChart({
     () =>
       GROUP_ORDER.map((g) => ({
         group: g,
-        items: extraDefs.filter((d) => d.group === g),
+        items: NUTRIENTS.filter((d) => d.group === g),
       })).filter((x) => x.items.length > 0),
-    [extraDefs],
+    [],
   );
 
   return (
@@ -143,8 +140,7 @@ export function DailyMetricChart({
           );
         })}
 
-        {extraDefs.length > 0 && (
-          <div className="relative">
+        <div className="relative">
             <button
               type="button"
               onClick={() => setMenuOpen((o) => !o)}
@@ -176,6 +172,12 @@ export function DailyMetricChart({
                             className="accent-neon-green"
                           />
                           <span className="flex-1 truncate">{d.label}</span>
+                          {withData.has(d.key) && (
+                            <span
+                              className="h-1.5 w-1.5 shrink-0 rounded-full bg-neon-green"
+                              title="υπάρχουν δεδομένα"
+                            />
+                          )}
                           <span className="text-muted">{d.unit}</span>
                         </label>
                       ))}
@@ -185,7 +187,6 @@ export function DailyMetricChart({
               </>
             )}
           </div>
-        )}
       </div>
 
       <ResponsiveContainer width="100%" height={260}>
