@@ -9,7 +9,8 @@ import {
   macrosForQuantity,
   sumMacros,
 } from "@/types/nutrition";
-import { logMeal, logFood } from "./actions";
+import { logMeal, logFoods } from "./actions";
+import FoodPicker from "@/app/meals/food-picker";
 
 export interface MealItemOption {
   food_id: string;
@@ -39,23 +40,40 @@ interface Props {
 const inputCls =
   "rounded-lg border border-edge bg-surface-2 px-2 py-1.5 text-sm text-foreground outline-none transition focus:border-neon-green/60";
 const r = (n: number) => Math.round(n);
+const ZERO = { calories: 0, protein: 0, carbs: 0, fats: 0 };
 
 interface EditItem extends MealItemOption {
   key: string;
 }
+
+// Τροφή-mode: μία ή περισσότερες τροφές με ποσότητες.
+interface FoodItem {
+  key: string;
+  food_id: string;
+  quantity: number;
+}
+type PickerState = { mode: "add" } | { mode: "change"; key: string };
 
 export default function LogAdder({ date, slot, meals, foods }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"meal" | "food">("meal");
   const [mealId, setMealId] = useState(meals[0]?.id ?? "");
-  const [foodId, setFoodId] = useState(foods[0]?.id ?? "");
-  const [quantity, setQuantity] = useState(100);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Υλικά της επιλεγμένης συνταγής με ρυθμιζόμενες ποσότητες.
   const [items, setItems] = useState<EditItem[]>([]);
+
+  // Τροφή-mode: όνομα (προαιρετικό) + τροφές.
+  const [foodName, setFoodName] = useState("");
+  const [foodItems, setFoodItems] = useState<FoodItem[]>([]);
+  const [picker, setPicker] = useState<PickerState | null>(null);
+
+  const foodsById = useMemo(
+    () => new Map(foods.map((f) => [f.id, f])),
+    [foods],
+  );
 
   function loadMeal(id: string) {
     setMealId(id);
@@ -65,11 +83,28 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
     );
   }
 
-  // Αρχικοποίηση υλικών όταν ανοίγει σε mode "meal".
+  // Μία αρχική γραμμή τροφής για το γρήγορο (μονής τροφής) σενάριο.
+  function seedFood() {
+    setFoodItems((prev) =>
+      prev.length > 0
+        ? prev
+        : foods[0]
+          ? [{ key: crypto.randomUUID(), food_id: foods[0].id, quantity: 100 }]
+          : [],
+    );
+  }
+
+  // Αρχικοποίηση όταν ανοίγει.
   function openAdder() {
     setOpen(true);
     setError(null);
     if (mealId) loadMeal(mealId);
+    seedFood();
+  }
+
+  function switchMode(mo: "meal" | "food") {
+    setMode(mo);
+    if (mo === "food") seedFood();
   }
 
   const mealTotals = useMemo(
@@ -82,10 +117,38 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, quantity: q } : it)));
   }
 
-  const foodPreview = useMemo(() => {
-    const f = foods.find((x) => x.id === foodId);
-    return f ? macrosForQuantity(f, Number(quantity) || 0) : null;
-  }, [foods, foodId, quantity]);
+  // Τροφή-mode handlers.
+  const foodTotals = useMemo(
+    () =>
+      sumMacros(
+        foodItems.map((it) => {
+          const f = foodsById.get(it.food_id);
+          return f ? macrosForQuantity(f, it.quantity || 0) : ZERO;
+        }),
+      ),
+    [foodItems, foodsById],
+  );
+
+  function handlePick(food: Food) {
+    if (!picker) return;
+    if (picker.mode === "add") {
+      setFoodItems((prev) => [
+        ...prev,
+        { key: crypto.randomUUID(), food_id: food.id, quantity: 100 },
+      ]);
+    } else {
+      const key = picker.key;
+      setFoodItems((prev) =>
+        prev.map((it) => (it.key === key ? { ...it, food_id: food.id } : it)),
+      );
+    }
+  }
+  function setFoodQty(key: string, q: number) {
+    setFoodItems((prev) => prev.map((it) => (it.key === key ? { ...it, quantity: q } : it)));
+  }
+  function removeFoodItem(key: string) {
+    setFoodItems((prev) => prev.filter((it) => it.key !== key));
+  }
 
   async function add() {
     setError(null);
@@ -98,13 +161,21 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
             meal_id: mealId,
             items: items.map((it) => ({ food_id: it.food_id, quantity: Number(it.quantity) || 0 })),
           })
-        : await logFood({ date, slot, food_id: foodId, quantity: Number(quantity) || 0 });
+        : await logFoods({
+            date,
+            slot,
+            name: foodName.trim(),
+            items: foodItems.map((it) => ({ food_id: it.food_id, quantity: Number(it.quantity) || 0 })),
+          });
     setBusy(false);
     if ("error" in res) {
       setError(res.error);
       return;
     }
     setOpen(false);
+    // Καθάρισμα ώστε η επόμενη καταγραφή να ξεκινά καθαρή.
+    setFoodName("");
+    setFoodItems([]);
     router.refresh();
   }
 
@@ -121,6 +192,8 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
 
   const hasMeals = meals.length > 0;
   const hasFoods = foods.length > 0;
+  const canSubmit =
+    mode === "meal" ? hasMeals : hasFoods && foodItems.length > 0;
 
   return (
     <div className="mt-2 rounded-xl border border-edge bg-surface-2/40 p-3">
@@ -129,7 +202,7 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
         {(["meal", "food"] as const).map((mo) => (
           <button
             key={mo}
-            onClick={() => setMode(mo)}
+            onClick={() => switchMode(mo)}
             className={[
               "rounded-full px-2.5 py-1 font-medium transition",
               mode === mo ? "bg-neon-green text-[#06281a]" : "border border-edge text-muted hover:text-foreground",
@@ -198,26 +271,75 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
         )
       ) : hasFoods ? (
         <div className="space-y-2">
-          <div className="flex gap-2">
-            <select value={foodId} onChange={(e) => setFoodId(e.target.value)} className={`${inputCls} flex-1`}>
-              {foods.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={quantity}
-              onChange={(e) => setQuantity(Number(e.target.value))}
-              className={`${inputCls} w-20 text-right`}
-            />
-          </div>
-          {foodPreview && (
-            <div className="text-right text-xs tabular-nums text-muted">
-              {r(foodPreview.calories)} kcal · Π {r(foodPreview.protein)} · Υ {r(foodPreview.carbs)} · Λ {r(foodPreview.fats)} g
-            </div>
+          {/* Προαιρετικό όνομα (μετονομασία) */}
+          <input
+            value={foodName}
+            onChange={(e) => setFoodName(e.target.value)}
+            placeholder="Όνομα (προαιρετικό)"
+            className={`${inputCls} w-full`}
+          />
+
+          {/* Τροφές με ρυθμιζόμενες ποσότητες */}
+          {foodItems.length > 0 && (
+            <ul className="divide-y divide-edge/70 rounded-lg border border-edge">
+              {foodItems.map((it) => {
+                const food = foodsById.get(it.food_id);
+                const m = food ? macrosForQuantity(food, it.quantity || 0) : ZERO;
+                return (
+                  <li key={it.key} className="flex items-center gap-2 px-2.5 py-2">
+                    <button
+                      type="button"
+                      onClick={() => setPicker({ mode: "change", key: it.key })}
+                      className="min-w-0 flex-1 truncate text-left text-sm text-foreground transition hover:text-neon-green"
+                    >
+                      {food ? food.name : "Επιλογή τροφής…"}
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={it.quantity}
+                      onChange={(e) => setFoodQty(it.key, Number(e.target.value))}
+                      className={`${inputCls} w-20 text-right`}
+                    />
+                    <span className="w-8 text-xs text-muted">{food?.unit ?? "g"}</span>
+                    <span className="w-16 text-right text-xs tabular-nums text-muted">{r(m.calories)} kcal</span>
+                    <button
+                      type="button"
+                      onClick={() => removeFoodItem(it.key)}
+                      aria-label="Αφαίρεση"
+                      className="text-muted transition hover:text-neon-pink"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
+
+          <button
+            type="button"
+            onClick={() => setPicker({ mode: "add" })}
+            className="rounded-lg border border-edge px-2.5 py-1.5 text-xs text-muted transition hover:border-neon-green/50 hover:text-foreground"
+          >
+            + Προσθήκη τροφής
+          </button>
+
+          {/* Σύνολα live */}
+          <div className="grid grid-cols-4 gap-2">
+            {([
+              ["Θερμ.", r(foodTotals.calories)],
+              ["Π", r(foodTotals.protein)],
+              ["Υ", r(foodTotals.carbs)],
+              ["Λ", r(foodTotals.fats)],
+            ] as const).map(([lbl, val]) => (
+              <div key={lbl} className="rounded-lg bg-surface-2 py-1.5 text-center">
+                <div className="text-[10px] text-muted">{lbl}</div>
+                <div className="text-sm font-semibold tabular-nums">{val}</div>
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <p className="text-sm text-muted">
@@ -231,7 +353,7 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
       <div className="mt-3 flex gap-2">
         <button
           onClick={add}
-          disabled={busy || (mode === "meal" ? !hasMeals : !hasFoods)}
+          disabled={busy || !canSubmit}
           className="rounded-lg bg-neon-green px-3 py-1.5 text-sm font-semibold text-[#06281a] transition hover:brightness-110 disabled:opacity-50"
         >
           {busy ? "…" : "Καταγραφή"}
@@ -240,6 +362,15 @@ export default function LogAdder({ date, slot, meals, foods }: Props) {
           Άκυρο
         </button>
       </div>
+
+      {picker && (
+        <FoodPicker
+          foods={foods}
+          onSelect={handlePick}
+          onClose={() => setPicker(null)}
+          title={picker.mode === "add" ? "Προσθήκη τροφής" : "Αλλαγή τροφής"}
+        />
+      )}
     </div>
   );
 }

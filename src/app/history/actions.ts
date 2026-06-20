@@ -76,12 +76,15 @@ export async function logMeal(input: {
   return { ok: true };
 }
 
-/** Καταγραφή μεμονωμένης τροφής με ποσότητα (snapshot). */
-export async function logFood(input: {
+/**
+ * Καταγραφή τροφής/τροφών ως ένα entry (snapshot).
+ * Δέχεται πολλαπλές τροφές με ποσότητες και προαιρετικό χειροκίνητο όνομα.
+ */
+export async function logFoods(input: {
   date: string;
   slot: MealSlot;
-  food_id: string;
-  quantity: number;
+  name: string;
+  items: { food_id: string; quantity: number }[];
 }): Promise<LogResult> {
   const supabase = await createClient();
   const {
@@ -89,27 +92,56 @@ export async function logFood(input: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Μη συνδεδεμένος χρήστης." };
 
-  const { data: food } = await supabase
+  const items = input.items.filter((it) => it.food_id);
+  if (items.length === 0) return { error: "Πρόσθεσε τουλάχιστον μία τροφή." };
+
+  // Τιμές ανά 100 + meta για τα food_ids (RLS: μόνο δικά του).
+  const foodIds = [...new Set(items.map((it) => it.food_id))];
+  const { data: foods } = await supabase
     .from("foods")
     .select(
-      "name, unit, calories_per_100, protein_per_100, carbs_per_100, fats_per_100",
+      "id, name, unit, calories_per_100, protein_per_100, carbs_per_100, fats_per_100",
     )
-    .eq("id", input.food_id)
-    .single();
+    .in("id", foodIds);
 
-  if (!food) return { error: "Η τροφή δεν βρέθηκε." };
+  type Row = Per100 & { id: string; name: string; unit: string };
+  const byId = new Map(((foods ?? []) as Row[]).map((f) => [f.id, f]));
 
-  const m = macrosForQuantity(food, input.quantity);
+  const totals = sumMacros(
+    items.map((it) => {
+      const f = byId.get(it.food_id);
+      const q = Number(it.quantity) || 0;
+      return f ? macrosForQuantity(f, q) : { calories: 0, protein: 0, carbs: 0, fats: 0 };
+    }),
+  );
+
+  // Όνομα: χειροκίνητο αν δόθηκε· αλλιώς αυτόματο
+  // (μία τροφή → «όνομα (ποσότ.μονάδα)», πολλές → ένωση ονομάτων).
+  let name = input.name.trim();
+  if (!name) {
+    if (items.length === 1) {
+      const f = byId.get(items[0].food_id);
+      const q = Number(items[0].quantity) || 0;
+      name = f ? `${f.name} (${q}${f.unit})` : "Τροφή";
+    } else {
+      name =
+        items
+          .map((it) => byId.get(it.food_id)?.name)
+          .filter(Boolean)
+          .join(" + ") || "Γεύμα";
+    }
+  }
+
   const { error } = await supabase.from("log_entries").insert({
     user_id: user.id,
     entry_date: input.date,
     slot: input.slot,
     meal_id: null,
-    name: `${food.name} (${input.quantity}${food.unit})`,
-    calories: m.calories,
-    protein: m.protein,
-    carbs: m.carbs,
-    fats: m.fats,
+    name,
+    calories: totals.calories,
+    protein: totals.protein,
+    carbs: totals.carbs,
+    fats: totals.fats,
   });
   if (error) return { error: error.message };
 
