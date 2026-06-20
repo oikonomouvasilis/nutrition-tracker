@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   if (!query) {
     return Response.json({ error: "empty_query" }, { status: 400 });
   }
-  if (query.length > 200) {
+  if (query.length > 2048) {
     return Response.json({ error: "too_long" }, { status: 400 });
   }
 

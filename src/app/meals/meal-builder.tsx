@@ -12,6 +12,9 @@ import {
   sumMacros,
 } from "@/types/nutrition";
 import { createMeal, updateMeal } from "./actions";
+import FoodPicker from "./food-picker";
+
+type PickerState = { mode: "add" } | { mode: "change"; key: string };
 
 interface BuilderItem {
   key: string;
@@ -56,6 +59,7 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [picker, setPicker] = useState<PickerState | null>(null);
 
   const totals = useMemo(
     () =>
@@ -71,10 +75,7 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
   );
 
   function addItem() {
-    setItems((prev) => [
-      ...prev,
-      { key: crypto.randomUUID(), food_id: foods[0]?.id ?? "", quantity: 100 },
-    ]);
+    setPicker({ mode: "add" });
   }
   function patchItem(key: string, patch: Partial<BuilderItem>) {
     setItems((prev) =>
@@ -83,6 +84,17 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
   }
   function removeItem(key: string) {
     setItems((prev) => prev.filter((it) => it.key !== key));
+  }
+  function handlePick(food: Food) {
+    if (!picker) return;
+    if (picker.mode === "add") {
+      setItems((prev) => [
+        ...prev,
+        { key: crypto.randomUUID(), food_id: food.id, quantity: 100 },
+      ]);
+    } else {
+      patchItem(picker.key, { food_id: food.id });
+    }
   }
 
   async function save() {
@@ -189,19 +201,13 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
                   key={it.key}
                   className="flex flex-wrap items-center gap-2 px-4 py-3"
                 >
-                  <select
-                    value={it.food_id}
-                    onChange={(e) =>
-                      patchItem(it.key, { food_id: e.target.value })
-                    }
-                    className={`${inputCls} min-w-40 flex-1`}
+                  <button
+                    type="button"
+                    onClick={() => setPicker({ mode: "change", key: it.key })}
+                    className={`${inputCls} min-w-40 flex-1 truncate text-left ${food ? "" : "text-muted"}`}
                   >
-                    {foods.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
+                    {food ? food.name : "Επιλογή τροφής…"}
+                  </button>
                   <div className="flex items-center gap-1">
                     <input
                       type="number"
@@ -277,6 +283,15 @@ export default function MealBuilder({ foods, mealId, initial }: Props) {
           Άκυρο
         </Link>
       </div>
+
+      {picker && (
+        <FoodPicker
+          foods={foods}
+          onSelect={handlePick}
+          onClose={() => setPicker(null)}
+          title={picker.mode === "add" ? "Προσθήκη υλικού" : "Αλλαγή τροφής"}
+        />
+      )}
     </div>
   );
 }

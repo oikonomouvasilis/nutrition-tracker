@@ -9,6 +9,7 @@ import {
   type NutrientGroup,
 } from "@/lib/nutrients";
 import { deleteFood } from "./actions";
+import EditFoodModal from "./edit-food-modal";
 
 const GROUPS: NutrientGroup[] = ["extended", "vitamin", "mineral"];
 
@@ -37,6 +38,7 @@ export default function FoodsTable({ foods }: { foods: Food[] }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("name-asc");
   const [cols, setCols] = useState<string[]>([]);
+  const [editing, setEditing] = useState<Food | null>(null);
 
   function toggleCol(key: string) {
     setCols((c) => (c.includes(key) ? c.filter((k) => k !== key) : [...c, key]));
@@ -186,16 +188,26 @@ export default function FoodsTable({ foods }: { foods: Food[] }) {
                       </td>
                     );
                   })}
-                  <td className="px-3 py-2.5 text-right">
-                    <form action={deleteFood}>
-                      <input type="hidden" name="id" value={f.id} />
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center justify-end gap-2">
                       <button
-                        className="text-muted transition hover:text-neon-pink"
-                        aria-label={`Διαγραφή ${f.name}`}
+                        type="button"
+                        onClick={() => setEditing(f)}
+                        className="text-muted transition hover:text-neon-cyan"
+                        aria-label={`Επεξεργασία ${f.name}`}
                       >
-                        ✕
+                        ✏️
                       </button>
-                    </form>
+                      <form action={deleteFood}>
+                        <input type="hidden" name="id" value={f.id} />
+                        <button
+                          className="text-muted transition hover:text-neon-pink"
+                          aria-label={`Διαγραφή ${f.name}`}
+                        >
+                          ✕
+                        </button>
+                      </form>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -208,6 +220,10 @@ export default function FoodsTable({ foods }: { foods: Food[] }) {
         {rows.length} {rows.length === 1 ? "τροφή" : "τροφές"}
         {query && ` από ${foods.length}`}
       </p>
+
+      {editing && (
+        <EditFoodModal food={editing} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }
