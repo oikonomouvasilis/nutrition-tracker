@@ -268,6 +268,7 @@ async function lookupGemini(query: string): Promise<FoodCandidate | null> {
 async function lookupGeminiFromPage(
   pageText: string,
   url: string,
+  fallbackName = "Τροφή από σελίδα",
 ): Promise<FoodCandidate | null> {
   const prompt =
     "Από το παρακάτω περιεχόμενο σελίδας τροφής/προϊόντος, βρες τα θρεπτικά στοιχεία ΑΝΑ 100 γραμμάρια (ή 100ml αν είναι υγρό).\n" +
@@ -285,7 +286,7 @@ async function lookupGeminiFromPage(
 
   const parsed = await callGeminiJson(prompt, false);
   if (!parsed || num(parsed.calories_per_100, -1) < 0) return null;
-  return geminiCandidateFromParsed(parsed, "Τροφή από σελίδα", url);
+  return geminiCandidateFromParsed(parsed, fallbackName, url);
 }
 
 // ---------------------------------------------------------------------------
@@ -367,7 +368,58 @@ function htmlToText(html: string): string {
     .slice(0, 12000);
 }
 
-async function fetchPageText(u: URL): Promise<string | null> {
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;|&#0*39;/gi, "'")
+    .replace(/&#(\d+);/g, (_, d) => {
+      const code = Number(d);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : "";
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Κράτα μόνο το όνομα προϊόντος (κόψε site-suffix μετά από | · – —). */
+function cleanTitle(s: string): string {
+  return s.split(/\s*[|·–—]\s*/)[0].trim().slice(0, 120);
+}
+
+/** Όνομα προϊόντος από og:title / <title> / meta description. */
+function extractTitle(html: string): string | null {
+  const og =
+    html.match(/<meta[^>]+(?:property|name)=["']og:title["'][^>]*content=["']([^"']+)["']/i) ??
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:title["']/i);
+  if (og?.[1]) return cleanTitle(decodeEntities(og[1]));
+
+  const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (t?.[1]) return cleanTitle(decodeEntities(t[1]));
+
+  const md = html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["']/i);
+  if (md?.[1]) return cleanTitle(decodeEntities(md[1]));
+
+  return null;
+}
+
+/** Όνομα από το τελευταίο τμήμα του path (fallback αν λείπει title). */
+function slugName(u: URL): string {
+  const seg = u.pathname.split("/").filter(Boolean).pop() ?? "";
+  return decodeURIComponent(seg)
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim();
+}
+
+interface PageContent {
+  text: string;
+  title: string | null;
+}
+
+async function fetchPage(u: URL): Promise<PageContent | null> {
   try {
     const res = await fetch(u, {
       headers: {
@@ -384,8 +436,7 @@ async function fetchPageText(u: URL): Promise<string | null> {
     const buf = await res.arrayBuffer();
     const slice = buf.slice(0, 512 * 1024); // cap ~512KB
     const html = new TextDecoder("utf-8", { fatal: false }).decode(slice);
-    const text = htmlToText(html);
-    return text.length > 0 ? text : null;
+    return { text: htmlToText(html), title: extractTitle(html) };
   } catch {
     return null;
   }
@@ -404,11 +455,38 @@ async function lookupByUrl(rawUrl: string): Promise<FoodLookup> {
     return { candidates: c ? [c] : [], searchLinks };
   }
 
-  // 2) Γενική σελίδα -> διάβασμα + Gemini
-  const text = await fetchPageText(u);
-  if (!text) return { candidates: [], searchLinks };
-  const ai = await lookupGeminiFromPage(text, u.toString());
-  return { candidates: ai ? [ai] : [], searchLinks };
+  // 2) Γενική σελίδα -> διάβασε τη σελίδα ΚΑΙ άντλησε στοιχεία για το προϊόν
+  //    (από όνομα/περιγραφή: OFF + Gemini), όχι μόνο σύνδεσμο.
+  const page = await fetchPage(u);
+  const name = (page?.title || slugName(u)).trim();
+
+  const [pageCand, off, aiByName] = await Promise.all([
+    page?.text
+      ? lookupGeminiFromPage(page.text, u.toString(), name)
+      : Promise.resolve<FoodCandidate | null>(null),
+    name ? lookupOpenFoodFacts(name) : Promise.resolve<FoodCandidate[]>([]),
+    name ? lookupGemini(name) : Promise.resolve<FoodCandidate | null>(null),
+  ]);
+
+  const candidates: FoodCandidate[] = [];
+  if (pageCand) candidates.push(pageCand);
+  candidates.push(...off);
+  if (aiByName) candidates.push(aiByName);
+
+  if (name) {
+    searchLinks.push(
+      {
+        label: "Αναζήτηση Google",
+        url: `https://www.google.com/search?q=${encodeURIComponent(name + " θρεπτική αξία ανά 100g")}`,
+      },
+      {
+        label: "Open Food Facts",
+        url: `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(name)}&search_simple=1&action=process`,
+      },
+    );
+  }
+
+  return { candidates: candidates.slice(0, 8), searchLinks };
 }
 
 // ---------------------------------------------------------------------------

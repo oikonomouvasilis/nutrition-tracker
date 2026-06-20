@@ -113,6 +113,22 @@ export default function FoodsTable({ foods }: { foods: Food[] }) {
             <span className="text-muted transition group-open:rotate-180">▾</span>
           </summary>
           <div className="absolute right-0 z-20 mt-2 max-h-80 w-64 overflow-y-auto rounded-xl border border-edge bg-surface p-2 shadow-xl">
+            <div className="mb-1 flex items-center gap-1.5 border-b border-edge px-1 pb-2">
+              <button
+                type="button"
+                onClick={() => setCols(NUTRIENTS.map((n) => n.key))}
+                className="flex-1 rounded-lg border border-edge px-2 py-1 text-xs text-foreground transition hover:border-neon-green/50"
+              >
+                Επιλογή όλων
+              </button>
+              <button
+                type="button"
+                onClick={() => setCols([])}
+                className="flex-1 rounded-lg border border-edge px-2 py-1 text-xs text-muted transition hover:text-foreground"
+              >
+                Καθαρισμός
+              </button>
+            </div>
             {GROUPS.map((g) => (
               <div key={g} className="mb-1">
                 <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
@@ -139,9 +155,12 @@ export default function FoodsTable({ foods }: { foods: Food[] }) {
         </details>
       </div>
 
-      {/* Πίνακας */}
+      {/* Πίνακας — οριζόντια κύλιση όταν προστεθούν πολλές στήλες */}
       <div className="shadow-soft mt-3 overflow-x-auto rounded-2xl border border-edge bg-surface/30">
-        <table className="w-full text-sm">
+        <table
+          className="w-full text-sm"
+          style={{ minWidth: `${520 + activeCols.length * 72}px` }}
+        >
           <thead className="bg-surface-2/60 text-left">
             <tr>
               <th className="px-4 py-2.5 font-medium text-muted">Τροφή</th>
